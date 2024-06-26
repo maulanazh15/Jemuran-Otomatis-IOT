@@ -16,6 +16,7 @@
 #define RAINDROP_SENSOR_PIN 34
 #define DHT_PIN 25
 #define DHT_TYPE DHT11
+#define LDR_PIN 35  // Tambahkan definisi pin untuk LDR
 
 #define I2C_SDA 21
 #define I2C_SCL 22
@@ -27,6 +28,7 @@ const char* auth = "pexckRwoI6VmlumMMgKzx5Z5ZieXjaia";
 uint32_t delayMS;
 float humidity;
 float temperature;
+int ldrValue;
 
 bool isRaining = false;
 bool previousIsRaining = false;
@@ -34,6 +36,7 @@ bool previousIsRaining = false;
 bool manualControl = false;  // Flag to check if manual control is activated
 bool roofOpen = false;       // Track the state of the roof
 bool autoMode = true;        // Flag to check if the system is in auto mode
+unsigned long lastManualChangeTime = 0; // Track the last time manual control was changed
 
 DHT_Unified dht(DHT_PIN, DHT_TYPE);
 Servo myservo;
@@ -43,27 +46,31 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);  // I2C address 0x27, 16 column and 2 rows
 void updateLCD() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Temp: ");
+  lcd.print("T: ");
   lcd.print(temperature);
   lcd.print("C");
 
   lcd.setCursor(0, 1);
-  lcd.print("Hum: ");
+  lcd.print("H: ");
   lcd.print(humidity);
   lcd.print("%");
-  
-  lcd.setCursor(10, 0);
+
+  lcd.setCursor(8, 0);
+  lcd.print("L: ");
+  lcd.print(ldrValue);
+
+  lcd.setCursor(15, 0);
   if (autoMode) {
-    lcd.print("Auto");
+    lcd.print("A");
   } else {
-    lcd.print("Manual");
+    lcd.print("M");
   }
 
-  lcd.setCursor(10, 1);
+  lcd.setCursor(15, 1);
   if (roofOpen) {
-    lcd.print("Open");
+    lcd.print("O");
   } else {
-    lcd.print("Closed");
+    lcd.print("C");
   }
 }
 
@@ -72,16 +79,21 @@ void myTimer() {
   // e.g. writing sensor value to datastream V5
   Blynk.virtualWrite(V0, humidity);
   Blynk.virtualWrite(V1, temperature);
+  Blynk.virtualWrite(V4, ldrValue);  // Kirim nilai LDR ke Blynk
   updateLCD();  // Update LCD display with latest values
-}
 
+  // Check if in manual mode and time since last change
+  if (!autoMode && (millis() - lastManualChangeTime > 10000)) {
+    autoMode = true;
+    manualControl = false;
+    Serial.println("Auto mode activated due to timeout");
+    updateLCD();  // Update LCD display with new mode
+  }
+}
 
 BLYNK_WRITE(V2) {
   // This function will be called every time the value of V2 changes (roof control)
   int pinValue = param.asInt(); // Get value as integer
-  if (autoMode) {
-    return; // Ignore manual control if in auto mode
-  }
   if (pinValue == 1) {
     manualControl = true;
     roofOpen = true;
@@ -93,21 +105,9 @@ BLYNK_WRITE(V2) {
     myservo.write(0); // Move servo to close the roof
     Blynk.virtualWrite(V3, "Tertutup");
   }
+  lastManualChangeTime = millis(); // Update last manual change time
+  autoMode = false; // Switch to manual mode
   updateLCD();  // Update LCD display with new roof status
-}
-
-BLYNK_WRITE(V4) {
-  // This function will be called every time the value of V4 changes (mode control)
-  int pinValue = param.asInt(); // Get value as integer
-  if (pinValue == 1) {
-    autoMode = false;
-    Serial.println("Manual mode activated");
-  } else {
-    autoMode = true;
-    manualControl = false; // Reset manual control flag
-    Serial.println("Auto mode activated");
-  }
-  updateLCD();  // Update LCD display with new mode
 }
 
 void setup() {
@@ -171,6 +171,10 @@ void setup() {
 
   // Initialize raindrop sensor pin
   pinMode(RAINDROP_SENSOR_PIN, INPUT);
+  
+  // Initialize LDR pin
+  pinMode(LDR_PIN, INPUT);
+
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, password);
   timer.setInterval(1000L, myTimer);
   
@@ -214,8 +218,13 @@ void loop() {
     Serial.print("Raindrop Sensor Value: ");
     Serial.println(raindropValue);
 
+    // Read LDR sensor value
+    ldrValue = analogRead(LDR_PIN);
+    Serial.print("LDR Sensor Value: ");
+    Serial.println(ldrValue);
+
     // Determine if it is raining
-    isRaining = (raindropValue < 2500 || humidity >= 80);
+    isRaining = (raindropValue < 2500 || ( ldrValue < 1000 && humidity >= 80 ));
 
     // If the rain status has changed, send a log event
     if (isRaining != previousIsRaining) {
@@ -225,12 +234,14 @@ void loop() {
         myservo.write(0); // Move servo to close the roof
         Blynk.virtualWrite(V3, "Tertutup");
         roofOpen = false;
+        Blynk.virtualWrite(V2, 0); // Update V2 to reflect the closed roof
       } else {
         Serial.println("Cerah");
         Blynk.logEvent("cerah", "Cerah, atap dibuka.");
         myservo.write(90); // Move servo to open the roof
         Blynk.virtualWrite(V3, "Terbuka");
         roofOpen = true;
+        Blynk.virtualWrite(V2, 1); // Update V2 to reflect the open roof
       }
       previousIsRaining = isRaining; // Update the previous state
       updateLCD();  // Update LCD display with new roof status
