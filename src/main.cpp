@@ -26,7 +26,7 @@ const char* password = "";           // Kosongkan jika WiFi tidak memiliki passw
 const char* auth = "pexckRwoI6VmlumMMgKzx5Z5ZieXjaia";
 
 uint32_t delayMS;
-float humidity;
+int humidity;
 float temperature;
 int ldrValue;
 
@@ -43,20 +43,36 @@ Servo myservo;
 BlynkTimer timer;
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // I2C address 0x27, 16 column and 2 rows
 
+byte degreeSymbol[8] = {
+  0b00111,
+  0b00101,
+  0b00111,
+  0b00000,
+  0b00000,
+  0b00000,
+  0b00000,
+  0b00000
+};
+
 void updateLCD() {
   lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("T: ");
-  lcd.print(temperature);
-  lcd.print("C");
 
+  // Create the degree symbol
+  lcd.createChar(0, degreeSymbol);
+
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(temperature);
+  lcd.write(byte(0)); // Print the custom degree symbol
+  lcd.print("C");
+  
   lcd.setCursor(0, 1);
-  lcd.print("H: ");
+  lcd.print("H:");
   lcd.print(humidity);
   lcd.print("%");
 
-  lcd.setCursor(8, 0);
-  lcd.print("L: ");
+  lcd.setCursor(8, 1);
+  lcd.print("L:");
   lcd.print(ldrValue);
 
   lcd.setCursor(15, 0);
@@ -224,7 +240,7 @@ void loop() {
     Serial.println(ldrValue);
 
     // Determine if it is raining
-    isRaining = (raindropValue < 2500 || ( ldrValue < 1000 && humidity >= 80 ));
+    isRaining = (raindropValue < 2500 || ( ldrValue < 1000 || humidity >= 80 ));
 
     // If the rain status has changed, send a log event
     if (isRaining != previousIsRaining) {
