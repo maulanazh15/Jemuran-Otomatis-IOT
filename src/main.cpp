@@ -247,7 +247,7 @@ void loop() {
       if (isRaining) {
         Blynk.logEvent("hujan", "Terjadi Hujan, atap ditutup.");
         Serial.println("Hujan");
-        myservo.write(0); // Move servo to close the roof
+        myservo.write(10); // Move servo to close the roof
         Blynk.virtualWrite(V3, "Tertutup");
         roofOpen = false;
         Blynk.virtualWrite(V2, 0); // Update V2 to reflect the closed roof
